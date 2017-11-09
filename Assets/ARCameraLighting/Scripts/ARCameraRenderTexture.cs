@@ -1,12 +1,13 @@
 ﻿using System.Collections;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Vuforia;
 
 /**
  * Captures the AR camera feed as a RenderTexture. 
  * Optional downsize and blue the texture.
  */
-[RequireComponent(typeof(FastBlur), typeof(ARCamera))]
+[RequireComponent(typeof(FastBlur))]
 public class ARCameraRenderTexture : MonoBehaviour
 {
     public RenderTexture targetRenderTexture;
@@ -17,7 +18,7 @@ public class ARCameraRenderTexture : MonoBehaviour
     // Are we capturing the camera feed?
     public bool IsCapturing { get { return isCapturing; } }
 
-	private IARCamera cameraBlit;
+	//private IARCamera cameraBlit;
     private int workingRenderTextureID = Shader.PropertyToID("_ARCameraRenderTexture");
     private CommandBuffer m_blitCommandBuffer;
     private CommandBuffer m_releaseCommandBuffer;
@@ -32,19 +33,26 @@ public class ARCameraRenderTexture : MonoBehaviour
         blendMaterial = Resources.Load<Material>("Materials/Blend");
         Debug.Assert(blendMaterial);
 
+
+
+
         // Wait for the AR session to start
-        while (!ARResources.IsConnected)
+        while (!VuforiaARController.Instance.HasStarted )
         {
-            yield return null;
+           //yield return null;
+           yield return new WaitForSeconds(1);
         }
 
         SetupBackgroundBlit();
     }
 
+    
+
     private void SetupBackgroundBlit()
     {
-		IARCamera arCamera = GetComponent<ARCamera>().Camera;
-		Debug.Assert (arCamera!=null);
+        var mainCamera = GetComponent<Camera>();
+		//IARCamera arCamera = GetComponent<ARCamera>().Camera;
+		//Debug.Assert (arCamera!=null);
 
         int renderTextureWidth = targetRenderTexture.width;
         int renderTextureHeight = targetRenderTexture.height;
@@ -53,8 +61,8 @@ public class ARCameraRenderTexture : MonoBehaviour
         if (m_blitCommandBuffer != null)
         {
             ARResources.DeregisterChangeCallback(SetupBackgroundBlit);
-			arCamera.Camera.RemoveCommandBuffer(CameraEvent.BeforeForwardOpaque, m_blitCommandBuffer);
-            arCamera.Camera.RemoveCommandBuffer(CameraEvent.AfterSkybox, m_releaseCommandBuffer);
+			mainCamera.RemoveCommandBuffer(CameraEvent.BeforeForwardOpaque, m_blitCommandBuffer);
+            mainCamera.RemoveCommandBuffer(CameraEvent.AfterSkybox, m_releaseCommandBuffer);
         }
 
         // Create the blit command buffer
@@ -62,7 +70,9 @@ public class ARCameraRenderTexture : MonoBehaviour
         m_blitCommandBuffer.GetTemporaryRT(workingRenderTextureID, renderTextureWidth, renderTextureHeight, 0, FilterMode.Bilinear);
         m_blitCommandBuffer.name = "Get ARBackground";
 
-		arCamera.BlitCameraTexture(m_blitCommandBuffer, workingRenderTextureID);
+        var blitMat = Resources.Load<Material>("Materials/ARCoreBlit");
+        var texture = this.GetComponentInChildren<BackgroundPlaneBehaviour>().Material.mainTexture;
+        m_blitCommandBuffer.Blit(texture, workingRenderTextureID, blitMat); //this process may not be necesary
 
         if (shouldBlurRenderTexture)
         {
@@ -76,13 +86,13 @@ public class ARCameraRenderTexture : MonoBehaviour
         m_blitCommandBuffer.Blit(workingRenderTextureID, targetRenderTexture, blendMaterial);
 
         // Run the command buffer just before opaque rendering
-        arCamera.Camera.AddCommandBuffer(CameraEvent.BeforeForwardOpaque, m_blitCommandBuffer);
+        mainCamera.AddCommandBuffer(CameraEvent.BeforeForwardOpaque, m_blitCommandBuffer);
 
         // Cleanup the temp render textures
         m_releaseCommandBuffer = new CommandBuffer();
         m_releaseCommandBuffer.name = "Release ARBackground";
         m_releaseCommandBuffer.ReleaseTemporaryRT(workingRenderTextureID);
-        arCamera.Camera.AddCommandBuffer(CameraEvent.AfterSkybox, m_releaseCommandBuffer);
+        mainCamera.AddCommandBuffer(CameraEvent.AfterSkybox, m_releaseCommandBuffer);
 
         isCapturing = true;
 
